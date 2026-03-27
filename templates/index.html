@@ -189,7 +189,24 @@ let state = {
   logs: [],
 };
 
-function set(key, val) { state.data[key] = val; render(); }
+function set(key, val, skipRender = false) {
+    // 1. Siempre guardamos el dato
+    state.data[key] = val; 
+    
+    // 2. Decidimos si redibujamos la pantalla
+    if (skipRender === true) {
+        // Modo silencioso (para el input). 
+        // Solo actualizamos el botón de "Siguiente" si es necesario, sin borrar el input.
+        let btnSiguiente = document.getElementById('btn-next'); // Cambia esto por el ID real de tu botón
+        if (btnSiguiente) {
+            btnSiguiente.disabled = (val.trim() === ''); 
+        }
+    } else {
+        // Modo normal (para los botones de selección). 
+        // Redibuja toda la pantalla para que los botones se pinten correctamente.
+        render(); 
+    }
+}
 function togglePlatform(p) {
   const pl = state.data.platforms;
   state.data.platforms = pl.includes(p) ? pl.filter(x=>x!==p) : [...pl, p];
@@ -258,19 +275,18 @@ function render() {
       inputHTML = `<div class="opts-wrap">${cats.map(c=>`
         <button class="chip ${data.category===c?'selected':''}" onclick="set('category','${c}')">${c}</button>`).join("")}</div>`;
     } else if (cur.id === "product") {
-      inputHTML = `<input type="text" id="inp" value="${data.product}" placeholder="Ej: suplemento para bajar de peso, curso de Excel..." oninput="set('product',this.value)" onkeydown="if(event.key==='Enter'&&${canNext})nextStep()">`;
+      inputHTML = `<input type="text" id="inp" value="${data.product}" placeholder="Ej: suplemento para bajar de peso, curso de Excel..." oninput="set('product',this.value,true)" onkeydown="if(event.key==='Enter' && this.value.trim()!=='')nextStep()">`;
     } else if (cur.id === "price") {
       inputHTML = `<div class="opts">${PRICES.map(p=>`
         <button class="opt-btn ${data.price===p?'selected':''}" onclick="set('price','${p}')">${p}</button>`).join("")}</div>`;
     } else if (cur.id === "commission") {
-      inputHTML = `<input type="text" id="inp" value="${data.commission}" placeholder="Ej: 40%, $25 por venta, no lo sé aún..." oninput="set('commission',this.value)" onkeydown="if(event.key==='Enter')nextStep()">`;
+      inputHTML = `<input type="text" id="inp" value="${data.commission}" placeholder="Ej: 40%, $25 por venta, no lo sé aún..." oninput="set('commission',this.value,true)" onkeydown="if(event.key==='Enter' && this.value.trim()!=='')nextStep()">`;
     } else if (cur.id === "target") {
-      inputHTML = `<input type="text" id="inp" value="${data.target}" placeholder="Ej: mujeres 25-45 años, emprendedores bolivianos..." oninput="set('target',this.value)" onkeydown="if(event.key==='Enter'&&${canNext})nextStep()">`;
-    } else if (cur.id === "platforms") {
+      inputHTML = `<input type="text" id="inp" value="${data.target}" placeholder="Ej: mujeres 25-45 años, emprendedores bolivianos..." oninput="set('target',this.value,true)" onkeydown="if(event.key==='Enter' && this.value.trim()!=='')nextStep()">`;} else if (cur.id === "platforms") {
       inputHTML = `<div class="opts-wrap">${PLATFORMS.map(p=>`
         <button class="chip ${data.platforms.includes(p)?'selected':''}" onclick="togglePlatform('${p}')">${data.platforms.includes(p)?'✓ ':''}${p}</button>`).join("")}</div>`;
     } else if (cur.id === "extra") {
-      inputHTML = `<textarea id="inp" rows="3" placeholder="Competidores, links, referencias, dudas específicas..." oninput="set('extra',this.value)">${data.extra}</textarea>`;
+      inputHTML = `<textarea id="inp" rows="3" placeholder="Competidores, links, referencias, dudas específicas..." oninput="set('extra',this.value,true)">${data.extra}</textarea>`;
     }
 
     app.innerHTML = `
@@ -284,7 +300,7 @@ function render() {
         ${inputHTML}
         <div class="btn-row">
           <button class="btn btn-ghost" onclick="${step===0?'goIdle()':'prevStep()'}">${step===0?'✕ Salir':'← Atrás'}</button>
-          <button class="btn btn-primary" ${canNext?'':'disabled'} onclick="nextStep()">${step===total-1?'🔍 Analizar ahora':'Siguiente →'}</button>
+          <button id="btn-next" class="btn btn-primary" ${canNext?'':'disabled'} onclick="nextStep()">${step===total-1?'🔍 Analizar ahora':'Siguiente →'}</button>
         </div>
       </div>`;
 
