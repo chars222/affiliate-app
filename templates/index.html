@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Affiliate Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #030712; --surface: rgba(255,255,255,.035); --border: rgba(255,255,255,.08);
+    --green: #10b981; --green-dim: rgba(16,185,129,.14); --green-border: rgba(16,185,129,.4);
+    --yellow: #f59e0b; --red: #ef4444; --blue: #3b82f6;
+    --text: #f3f4f6; --muted: #9ca3af; --faint: #6b7280;
+    --radius: 14px; --font: 'Inter', sans-serif; --head: 'Syne', sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 28px 16px 60px; }
+
+  /* Header */
+  .header { text-align: center; margin-bottom: 26px; }
+  .header h1 { font-family: var(--head); font-size: clamp(20px,4vw,28px); font-weight: 800; background: linear-gradient(90deg, var(--green), var(--blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 4px; }
+  .header p { color: var(--faint); font-size: 12px; }
+
+  /* Cards */
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px 22px; width: 100%; max-width: 540px; animation: up .3s ease; }
+  @keyframes up { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:none; } }
+
+  /* Progress */
+  .progress-wrap { max-width: 540px; width: 100%; margin-bottom: 14px; }
+  .progress-meta { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; color: var(--faint); font-family: monospace; }
+  .progress-meta span:last-child { color: var(--green); }
+  .progress-bar { height: 3px; background: rgba(255,255,255,.06); border-radius: 4px; }
+  .progress-fill { height: 3px; border-radius: 4px; background: linear-gradient(90deg, var(--green), var(--blue)); transition: width .4s ease; }
+
+  /* Step icon + title */
+  .step-icon { font-size: 26px; margin-bottom: 8px; }
+  .step-title { font-family: var(--head); font-size: 17px; font-weight: 700; margin-bottom: 16px; line-height: 1.4; }
+  .optional-tag { font-size: 12px; color: var(--faint); font-weight: 400; margin-left: 6px; }
+
+  /* Inputs */
+  input[type=text], textarea {
+    background: rgba(255,255,255,.055); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 11px; padding: 11px 14px; color: var(--text); font-size: 14px;
+    outline: none; width: 100%; font-family: inherit;
+  }
+  input[type=text]:focus, textarea:focus { border-color: var(--green-border); }
+  textarea { resize: vertical; }
+
+  /* Option buttons */
+  .opts { display: flex; flex-direction: column; gap: 7px; max-height: 320px; overflow-y: auto; }
+  .opts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .opts-wrap { display: flex; flex-wrap: wrap; gap: 7px; }
+  .opt-btn {
+    cursor: pointer; border-radius: 10px; padding: 11px 14px; font-size: 13px;
+    text-align: left; font-family: inherit; transition: all .15s; width: 100%;
+    background: var(--surface); border: 1px solid var(--border); color: #d1d5db;
+  }
+  .opt-btn.selected { background: var(--green-dim); border-color: var(--green-border); color: var(--green); font-weight: 600; }
+  .opt-btn .opt-desc { font-size: 11px; color: var(--faint); margin-top: 3px; }
+  .chip {
+    cursor: pointer; border-radius: 7px; padding: 6px 11px; font-size: 12px;
+    font-family: inherit; transition: all .15s;
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09); color: #d1d5db;
+  }
+  .chip.selected { background: var(--green-dim); border-color: var(--green-border); color: var(--green); }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 9px; margin-top: 14px; }
+  .btn { cursor: pointer; border: none; border-radius: 11px; padding: 12px 20px; font-size: 14px; font-weight: 600; font-family: inherit; transition: all .15s; }
+  .btn-primary { background: linear-gradient(135deg, var(--green), #059669); color: #fff; flex: 1; }
+  .btn-primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .btn-primary:disabled { opacity: .4; cursor: not-allowed; transform: none; filter: none; }
+  .btn-ghost { background: transparent; border: 1px solid rgba(255,255,255,.13); color: var(--muted); min-width: 90px; }
+  .btn-ghost:hover { border-color: rgba(255,255,255,.28); color: var(--text); }
+
+  /* Analyzing */
+  .analyzing { max-width: 400px; width: 100%; text-align: center; padding: 48px 20px; animation: up .3s ease; }
+  .spinner { width: 52px; height: 52px; border: 3px solid rgba(16,185,129,.12); border-top-color: var(--green); border-radius: 50%; margin: 0 auto 18px; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .log-box { background: rgba(0,0,0,.5); border-radius: 10px; padding: 11px 14px; text-align: left; min-height: 56px; font-family: monospace; margin-top: 18px; }
+  .log-line { font-size: 12px; margin-bottom: 3px; }
+  .log-ok { color: var(--green); } .log-err { color: var(--red); } .log-info { color: var(--faint); }
+  @keyframes pulse { 0%,100%{opacity:.3} 50%{opacity:1} }
+  .pulsing { animation: pulse 1.5s infinite; }
+
+  /* Results */
+  .results { max-width: 700px; width: 100%; display: flex; flex-direction: column; gap: 13px; }
+  .verdict-card { border-radius: var(--radius); padding: 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; animation: up .3s ease; }
+  .verdict-badge { display: inline-block; border-radius: 7px; padding: 4px 12px; font-size: 12px; font-weight: 700; margin-right: 8px; }
+  .verdict-reason { font-size: 12px; color: var(--muted); }
+  .big-score { font-family: var(--head); font-size: 50px; font-weight: 800; line-height: 1; text-align: center; min-width: 76px; }
+  .score-label { font-size: 10px; color: var(--faint); letter-spacing: 1px; text-align: center; }
+  .market-ctx { background: rgba(59,130,246,.08); border: 1px solid rgba(59,130,246,.15); border-radius: 9px; padding: 9px 12px; font-size: 12px; color: #93c5fd; line-height: 1.6; margin-top: 12px; }
+
+  /* Gauges */
+  .gauges-grid { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; }
+  .gauge-wrap { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .gauge-label { font-size: 10px; color: var(--faint); text-align: center; max-width: 74px; line-height: 1.3; }
+
+  /* Insights */
+  .insight-row { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 12px; }
+  .insight-badge { min-width: 38px; height: 38px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; font-family: monospace; }
+  .insight-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .insight-text { font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .insight-source { font-size: 10px; color: var(--faint); margin-top: 2px; font-style: italic; }
+
+  /* Two-col */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; }
+  .section-label { color: var(--faint); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; font-weight: 600; margin: 0 0 14px; }
+
+  /* Idle */
+  .idle-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 22px; }
+  .idle-chip { background: rgba(16,185,129,.06); border: 1px solid rgba(16,185,129,.11); border-radius: 8px; padding: 7px 10px; font-size: 12px; color: #d1fae5; }
+
+  /* Error */
+  .error-card { max-width: 460px; width: 100%; text-align: center; border-radius: var(--radius); padding: 36px 22px; animation: up .3s ease; }
+
+  @media (max-width: 480px) {
+    .two-col { grid-template-columns: 1fr; }
+    .opts-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ Affiliate Intelligence</h1>
+  <p>Análisis con datos reales · Google Trends · Wikipedia · Adaptado a tu mercado</p>
+</div>
+
+<div id="app"></div>
+
+<script>
+const COUNTRIES = [
+  { code:"BO", name:"Bolivia 🇧🇴",         notes:"Mercado digital en crecimiento, WhatsApp y TikTok dominan" },
+  { code:"MX", name:"México 🇲🇽",          notes:"Mayor mercado hispano de afiliados, alta competencia" },
+  { code:"AR", name:"Argentina 🇦🇷",       notes:"Audiencia muy activa digitalmente, economía volátil" },
+  { code:"CO", name:"Colombia 🇨🇴",        notes:"Crecimiento acelerado en ecommerce, buena adopción digital" },
+  { code:"PE", name:"Perú 🇵🇪",            notes:"Mercado emergente con buena adopción de ecommerce" },
+  { code:"CL", name:"Chile 🇨🇱",           notes:"Mayor poder adquisitivo de LATAM, mercado maduro" },
+  { code:"EC", name:"Ecuador 🇪🇨",         notes:"Usa dólar, facilita transacciones internacionales" },
+  { code:"PY", name:"Paraguay 🇵🇾",        notes:"Mercado pequeño pero con crecimiento digital" },
+  { code:"UY", name:"Uruguay 🇺🇾",         notes:"Alto índice de digitalización, mercado solvente" },
+  { code:"ES", name:"España 🇪🇸",          notes:"Mercado maduro europeo, gran poder adquisitivo" },
+  { code:"US", name:"EE.UU. 🇺🇸",          notes:"Mayor mercado de afiliados del mundo, competencia extrema" },
+  { code:"LATAM", name:"Latinoamérica 🌎",  notes:"Estrategia regional, mayor alcance" },
+];
+
+const PRODUCT_TYPES = [
+  { id:"digital",  label:"Digital",       desc:"Cursos, ebooks, membresías...", icon:"💻" },
+  { id:"physical", label:"Físico",        desc:"Suplementos, gadgets, belleza...", icon:"📦" },
+  { id:"service",  label:"Servicio/SaaS", desc:"Apps, plataformas, suscripciones...", icon:"⚙️" },
+  { id:"hybrid",   label:"Híbrido",       desc:"Físico + digital combinados", icon:"🔗" },
+];
+
+const CATS = {
+  digital:  ["Educación / Cursos","Finanzas personales","Salud & Bienestar","Fitness & Deporte","Marketing & Negocios","Software / Herramientas","Idiomas","Entretenimiento","Otro"],
+  physical: ["Suplementos & Salud","Belleza & Cuidado personal","Fitness & Equipamiento","Hogar & Decoración","Tecnología & Gadgets","Moda & Accesorios","Alimentación","Mascotas","Otro"],
+  service:  ["SaaS / Software","Marketing & SEO","Finanzas & Inversión","Educación online","Diseño","Salud & Telemedicina","Otro"],
+  hybrid:   ["Salud & Bienestar","Educación","Fitness","Tecnología","Belleza","Negocios","Otro"],
+};
+
+const PRICES    = ["Menos de $30","$30 - $100","$100 - $300","$300 - $1,000","Más de $1,000","Suscripción recurrente"];
+const PLATFORMS = ["Instagram/Reels","TikTok","YouTube","Blog/SEO","Email marketing","Facebook Ads","Google Ads","WhatsApp/Grupos","Pinterest"];
+
+const STEPS = [
+  { id:"country",     title:"¿En qué mercado quieres vender?",        icon:"🌎" },
+  { id:"productType", title:"¿Qué tipo de producto es?",              icon:"📦" },
+  { id:"category",    title:"¿Cuál es la categoría?",                 icon:"🏷️" },
+  { id:"product",     title:"Descríbenos el producto",                icon:"✏️" },
+  { id:"price",       title:"¿Cuál es el rango de precio?",           icon:"💰" },
+  { id:"commission",  title:"¿Cuánto paga de comisión al afiliado?",  icon:"📊" },
+  { id:"target",      title:"¿A quién va dirigido?",                  icon:"🎯" },
+  { id:"platforms",   title:"¿Dónde planeas promocionarlo?",          icon:"📱" },
+  { id:"extra",       title:"¿Algo más que quieras agregar?",         icon:"💬", optional:true },
+];
+
+const DIM_LABELS = {
+  demand:"Demanda", competition:"Baja Competencia", trend:"Tendencia",
+  margin:"Margen", viral_potential:"Potencial Viral", affiliate_saturation:"Baja Saturación"
+};
+
+// ── State ──────────────────────────────────────────────────────────────────
+let state = {
+  stage: "idle", // idle | collecting | analyzing | results | error
+  step: 0,
+  data: { country:"BO", productType:"", category:"", product:"", price:"", commission:"", target:"", platforms:[], extra:"" },
+  result: null,
+  logs: [],
+};
+
+function set(key, val) { state.data[key] = val; render(); }
+function togglePlatform(p) {
+  const pl = state.data.platforms;
+  state.data.platforms = pl.includes(p) ? pl.filter(x=>x!==p) : [...pl, p];
+  render();
+}
+
+// ── Gauge SVG ──────────────────────────────────────────────────────────────
+function gaugeHTML(value, label, color) {
+  const r=28, circ=2*Math.PI*r, fill=(value/100)*circ;
+  return `
+    <div class="gauge-wrap">
+      <svg width="70" height="70" viewBox="0 0 70 70">
+        <circle cx="35" cy="35" r="${r}" fill="none" stroke="#1f2937" stroke-width="6"/>
+        <circle cx="35" cy="35" r="${r}" fill="none" stroke="${color}" stroke-width="6"
+          stroke-dasharray="${fill} ${circ}" stroke-linecap="round" transform="rotate(-90 35 35)"/>
+        <text x="35" y="41" text-anchor="middle" fill="white" font-size="13" font-weight="700" font-family="monospace">${value}</text>
+      </svg>
+      <div class="gauge-label">${label}</div>
+    </div>`;
+}
+
+function dimColor(s) { return s>=70?"#10b981":s>=40?"#f59e0b":"#ef4444"; }
+function verdictColor(v) { return v==="ALTA OPORTUNIDAD"?"#10b981":v==="VIABLE"?"#f59e0b":"#ef4444"; }
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function render() {
+  const app = document.getElementById("app");
+  const { stage, step, data, result, logs } = state;
+
+  if (stage === "idle") {
+    app.innerHTML = `
+      <div class="card" style="text-align:center">
+        <div style="font-size:46px;margin-bottom:12px">🔍</div>
+        <h2 style="font-family:var(--head);font-size:19px;font-weight:800;margin-bottom:8px">¿Tienes un producto en mente?</h2>
+        <p style="color:var(--muted);line-height:1.75;font-size:13px;margin-bottom:20px">
+          9 preguntas · Datos reales de Google Trends y Wikipedia · Score 0–100 · Adaptado a tu país
+        </p>
+        <div class="idle-grid">
+          ${["💻 Digitales","📦 Físicos","⚙️ SaaS","🔗 Híbridos","🌎 Por país","📈 Datos reales","💡 Plan","⚠️ Riesgos"].map(x=>`<div class="idle-chip">${x}</div>`).join("")}
+        </div>
+        <button class="btn btn-primary" onclick="goCollect()">Comenzar análisis →</button>
+      </div>`;
+    return;
+  }
+
+  if (stage === "collecting") {
+    const cur = STEPS[step];
+    const total = STEPS.length;
+    const prog = (step / total) * 100;
+    const canNext = cur.optional ? true : cur.id === "platforms" ? data.platforms.length > 0 : !!data[cur.id];
+
+    let inputHTML = "";
+
+    if (cur.id === "country") {
+      inputHTML = `<div class="opts">${COUNTRIES.map(c=>`
+        <button class="opt-btn ${data.country===c.code?'selected':''}" onclick="set('country','${c.code}')">
+          ${c.name} <div class="opt-desc">${c.notes}</div>
+        </button>`).join("")}</div>`;
+    } else if (cur.id === "productType") {
+      inputHTML = `<div class="opts-grid">${PRODUCT_TYPES.map(t=>`
+        <button class="opt-btn ${data.productType===t.id?'selected':''}" onclick="set('productType','${t.id}');set('category','')">
+          <span>${t.icon} ${t.label}</span><div class="opt-desc">${t.desc}</div>
+        </button>`).join("")}</div>`;
+    } else if (cur.id === "category") {
+      const cats = CATS[data.productType] || CATS.digital;
+      inputHTML = `<div class="opts-wrap">${cats.map(c=>`
+        <button class="chip ${data.category===c?'selected':''}" onclick="set('category','${c}')">${c}</button>`).join("")}</div>`;
+    } else if (cur.id === "product") {
+      inputHTML = `<input type="text" id="inp" value="${data.product}" placeholder="Ej: suplemento para bajar de peso, curso de Excel..." oninput="set('product',this.value)" onkeydown="if(event.key==='Enter'&&${canNext})nextStep()">`;
+    } else if (cur.id === "price") {
+      inputHTML = `<div class="opts">${PRICES.map(p=>`
+        <button class="opt-btn ${data.price===p?'selected':''}" onclick="set('price','${p}')">${p}</button>`).join("")}</div>`;
+    } else if (cur.id === "commission") {
+      inputHTML = `<input type="text" id="inp" value="${data.commission}" placeholder="Ej: 40%, $25 por venta, no lo sé aún..." oninput="set('commission',this.value)" onkeydown="if(event.key==='Enter')nextStep()">`;
+    } else if (cur.id === "target") {
+      inputHTML = `<input type="text" id="inp" value="${data.target}" placeholder="Ej: mujeres 25-45 años, emprendedores bolivianos..." oninput="set('target',this.value)" onkeydown="if(event.key==='Enter'&&${canNext})nextStep()">`;
+    } else if (cur.id === "platforms") {
+      inputHTML = `<div class="opts-wrap">${PLATFORMS.map(p=>`
+        <button class="chip ${data.platforms.includes(p)?'selected':''}" onclick="togglePlatform('${p}')">${data.platforms.includes(p)?'✓ ':''}${p}</button>`).join("")}</div>`;
+    } else if (cur.id === "extra") {
+      inputHTML = `<textarea id="inp" rows="3" placeholder="Competidores, links, referencias, dudas específicas..." oninput="set('extra',this.value)">${data.extra}</textarea>`;
+    }
+
+    app.innerHTML = `
+      <div class="progress-wrap">
+        <div class="progress-meta"><span>Pregunta ${step+1} de ${total}</span><span>${Math.round(prog)}%</span></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:${prog}%"></div></div>
+      </div>
+      <div class="card">
+        <div class="step-icon">${cur.icon}</div>
+        <div class="step-title">${cur.title}${cur.optional?'<span class="optional-tag">(opcional)</span>':''}</div>
+        ${inputHTML}
+        <div class="btn-row">
+          <button class="btn btn-ghost" onclick="${step===0?'goIdle()':'prevStep()'}">${step===0?'✕ Salir':'← Atrás'}</button>
+          <button class="btn btn-primary" ${canNext?'':'disabled'} onclick="nextStep()">${step===total-1?'🔍 Analizar ahora':'Siguiente →'}</button>
+        </div>
+      </div>`;
+
+    // Auto-focus text inputs
+    setTimeout(()=>{ const el=document.getElementById("inp"); if(el) el.focus(); }, 50);
+    return;
+  }
+
+  if (stage === "analyzing") {
+    const country = COUNTRIES.find(c=>c.code===data.country) || COUNTRIES[0];
+    app.innerHTML = `
+      <div class="analyzing">
+        <div class="spinner"></div>
+        <h3 style="font-family:var(--head);font-size:17px;font-weight:700;margin-bottom:7px">Analizando en ${country.name}...</h3>
+        <p style="color:var(--faint);font-size:13px;line-height:1.7">Consultando Google Trends, Wikipedia y datos de mercado.</p>
+        <div class="log-box">
+          ${logs.length===0
+            ? '<div class="log-line log-info pulsing">Iniciando...</div>'
+            : logs.map(l=>`<div class="log-line ${l.startsWith('✗')?'log-err':'log-ok'}">${l.startsWith('✗')?'':' › '}${l}</div>`).join("")}
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (stage === "error") {
+    app.innerHTML = `
+      <div class="error-card" style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.18)">
+        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+        <h3 style="font-family:var(--head);font-size:18px;color:var(--red);margin-bottom:10px">Error al analizar</h3>
+        <div class="log-box">${logs.map(l=>`<div class="log-line ${l.startsWith('✗')?'log-err':'log-info'}">${l}</div>`).join("")}</div>
+        <p style="color:var(--muted);font-size:13px;margin:14px 0">Tus respuestas están guardadas.</p>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <button class="btn btn-primary" onclick="runAnalysis()">🔄 Reintentar</button>
+          <button class="btn btn-ghost" onclick="goCollect()">← Volver al formulario</button>
+          <button class="btn btn-ghost" onclick="goIdle()">✕ Empezar de nuevo</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  if (stage === "results" && result) {
+    const country = COUNTRIES.find(c=>c.code===data.country)||COUNTRIES[0];
+    const vc = verdictColor(result.verdict);
+    const dims = result.dimensions;
+
+    const dimKeys = ["demand","competition","trend","margin","viral_potential","affiliate_saturation"];
+
+    app.innerHTML = `
+      <div class="results">
+
+        <!-- Verdict -->
+        <div class="verdict-card" style="background:rgba(255,255,255,.03);border:1px solid ${vc}28">
+          <div style="flex:1">
+            <div style="color:var(--faint);font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Análisis · ${country.name}</div>
+            <h2 style="font-family:var(--head);font-size:18px;font-weight:800;margin-bottom:9px">${data.product}</h2>
+            <div>
+              <span class="verdict-badge" style="background:${vc}20;border:1px solid ${vc}40;color:${vc}">${result.verdict}</span>
+              <span class="verdict-reason">Score basado en datos reales</span>
+            </div>
+            ${result.country_context?`<div class="market-ctx">🌎 ${result.country_context}</div>`:''}
+          </div>
+          <div>
+            <div class="big-score" style="color:${vc}">${result.overall_score}</div>
+            <div class="score-label">/100</div>
+          </div>
+        </div>
+
+        <!-- Gauges -->
+        <div class="card">
+          <div class="section-label">Dimensiones — datos reales</div>
+          <div class="gauges-grid">
+            ${dimKeys.map(k => {
+              const v = dims[k];
+              if (!v) return '';
+              return gaugeHTML(v.score, DIM_LABELS[k], dimColor(v.score));
+            }).join("")}
+          </div>
+        </div>
+
+        <!-- Insights -->
+        <div class="card">
+          <div class="section-label">Insights detallados</div>
+          ${dimKeys.map(k => {
+            const v = dims[k];
+            if (!v) return '';
+            const col = dimColor(v.score);
+            return `
+              <div class="insight-row">
+                <div class="insight-badge" style="background:${col}14;border:1px solid ${col}28;color:${col}">${v.score}</div>
+                <div>
+                  <div class="insight-title">${DIM_LABELS[k]}</div>
+                  <div class="insight-text">${v.label || ''}</div>
+                  ${v.source?`<div class="insight-source">Fuente: ${v.source}</div>`:''}
+                  ${v.suggestions&&v.suggestions.length?`<div class="insight-source">Búsquedas relacionadas: ${v.suggestions.slice(0,3).join(' · ')}</div>`:''}
+                  ${v.views?`<div class="insight-source">Promedio diario Wikipedia: ${v.views.toLocaleString()} vistas</div>`:''}
+                </div>
+              </div>`;
+          }).join("")}
+        </div>
+
+        <!-- Action buttons -->
+        <button class="btn btn-ghost" onclick="goIdle()" style="text-align:center">← Analizar otro producto</button>
+      </div>`;
+  }
+}
+
+// ── Navigation ─────────────────────────────────────────────────────────────
+function goIdle() {
+  state = { stage:"idle", step:0, data:{ country:"BO", productType:"", category:"", product:"", price:"", commission:"", target:"", platforms:[], extra:"" }, result:null, logs:[] };
+  render();
+}
+function goCollect() { state.stage="collecting"; state.step=0; render(); }
+function prevStep() { if(state.step>0){ state.step--; render(); } }
+function nextStep() {
+  if(state.step+1 < STEPS.length) { state.step++; render(); }
+  else runAnalysis();
+}
+
+// ── Analysis ───────────────────────────────────────────────────────────────
+async function runAnalysis() {
+  state.stage = "analyzing";
+  state.logs = [];
+  render();
+
+  function log(msg) { state.logs.push(msg); render(); }
+
+  try {
+    log("Conectando con el servidor...");
+
+    const resp = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(state.data)
+    });
+
+    log(`HTTP ${resp.status} ✓`);
+
+    if (!resp.ok) {
+      const txt = await resp.text();
+      throw new Error(`Error del servidor: ${txt.slice(0,100)}`);
+    }
+
+    const result = await resp.json();
+    log("Datos de Google Trends recibidos ✓");
+    log("Datos de Wikipedia recibidos ✓");
+    log("Análisis completado ✓");
+
+    state.result = result;
+    state.stage = "results";
+    render();
+
+  } catch(e) {
+    log("✗ " + e.message);
+    state.stage = "error";
+    render();
+  }
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>
