@@ -60,6 +60,13 @@
         .score-label { font-size: 12px; color: var(--faint); font-weight: 700; text-align: center; margin-top: 4px; }
         .verdict-badge { padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; }
         
+        /* Nuevos estilos para la leyenda */
+        .legend-card { background: rgba(255,255,255,0.02); border: 1px dashed #334155; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+        .legend-title { font-size: 11px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; text-align: center; }
+        .legend-item { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 10px; font-size: 12.5px; line-height: 1.5; color: #cbd5e1; }
+        .legend-item:last-child { margin-bottom: 0; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+        
         .gauges-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-top: 20px; }
         .gauge-wrap { display: flex; flex-direction: column; align-items: center; text-align: center; background: #0f172a; padding: 16px; border-radius: 12px; }
         .gauge-label { font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 10px; line-height: 1.2; text-transform: uppercase;}
@@ -227,9 +234,9 @@ function render() {
     const dims = result.dimensions;
     const dimKeys = ["demand", "meta_ads", "social_interest", "competition", "margin", "viral_potential"];
 
-    // Enlace directo a la librería de Meta Ads
+    // Enlace directo a la librería de Meta Ads forzando la búsqueda estricta de activos
     const metaCountry = data.country === "LATAM" ? "ALL" : data.country;
-    const metaUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${metaCountry}&q=${encodeURIComponent(data.product)}`;
+    const metaUrl = `https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=${metaCountry}&q=${encodeURIComponent(data.product)}&search_type=keyword_unordered&media_type=all`;
 
     let anglesHTML = "";
     if (result.angles && result.angles.length > 0) {
@@ -263,6 +270,22 @@ function render() {
             <div class="big-score" style="color:${vc}">${result.overall_score}</div>
             <div class="score-label">/100</div>
           </div>
+        </div>
+
+        <div class="legend-card">
+            <div class="legend-title">Guía de Acción: ¿Qué significa tu puntaje?</div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #10b981;"></div>
+                <div><strong>70 - 100 (Alta Oportunidad):</strong> El punto ideal. Demanda comprobada, buena rentabilidad y competencia moderada. ¡Lanza campañas de prueba de inmediato!</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #f59e0b;"></div>
+                <div><strong>45 - 69 (Viable):</strong> Hay mercado pero también competidores fuertes. Necesitarás tráfico orgánico o un ángulo de venta muy original (usa los de la IA) para destacar.</div>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background: #ef4444;"></div>
+                <div><strong>0 - 44 (Evitar):</strong> Mercado hiper-saturado, sin demanda real o de margen muy bajo. Mejor invierte tu tiempo y dinero en otro producto.</div>
+            </div>
         </div>
 
         <div class="card">

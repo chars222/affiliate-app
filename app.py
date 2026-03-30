@@ -128,7 +128,7 @@ def get_real_meta_ads_scraper(keyword, api_key):
     try:
         # Endpoint genérico. Reemplaza URL y Host según la API que contrates/uses en RapidAPI
         url = "https://facebook-ads-scraper.p.rapidapi.com/search"
-        querystring = {"keyword": keyword, "limit": "50"}
+        querystring = {"keyword": keyword, "limit": "50", "active_status": "active"}
         headers = {
             "X-RapidAPI-Key": api_key,
             "X-RapidAPI-Host": "facebook-ads-scraper.p.rapidapi.com"
@@ -214,16 +214,12 @@ def analyze():
     
     results = {}
     
-    if product_type in ["physical", "hybrid"]:
-        results["demand"] = get_mercadolibre_demand(keyword, country)
-    else:
-        results["demand"] = {"score": 80, "label": "Producto digital", "source": "N/A"}
-        
+    # 1. Calculamos las métricas estándar primero
     results["competition"] = get_competition_score(keyword, country)
     results["margin"] = estimate_margin(product_type, commission)
     results["viral_potential"] = estimate_viral_potential(product_type, platforms)
     
-    # Análisis de YouTube con IA
+    # 2. Análisis de YouTube con IA
     yt_data = get_raw_youtube_comments(keyword, YOUTUBE_API_KEY)
     ai_data = get_ai_insights(keyword, country, product_type, yt_data["comments"])
     
@@ -233,12 +229,11 @@ def analyze():
         "source": "Gemini AI"
     }
     
-    # LÓGICA DE FALLBACK Y CONTEO DE ANUNCIOS: Scraper Real vs IA
+    # 3. LÓGICA DE FALLBACK Y CONTEO DE ANUNCIOS: Scraper Real vs IA
     meta_ads_count = "Estimado por IA"
     real_meta_ads = get_real_meta_ads_scraper(keyword, RAPIDAPI_KEY)
     
     if real_meta_ads:
-        # Extraemos el count que ahora envía la función para mandarlo al frontend
         meta_ads_count = real_meta_ads.get("ad_count", 0)
         results["meta_ads"] = real_meta_ads
     else:
@@ -247,6 +242,21 @@ def analyze():
             "label": ai_data.get("meta_ads_label", "Estimado por IA"),
             "source": "Gemini AI (Falta Scraper Key)"
         }
+    
+    # 4. NUEVA LÓGICA DE DEMANDA COMERCIAL (Ajuste para Bolivia)
+    if product_type in ["physical", "hybrid"]:
+        if country == "BO":
+            # Para Bolivia clonamos el score de Meta Ads ya que dicta la demanda real
+            results["demand"] = {
+                "score": results["meta_ads"]["score"],
+                "label": "Reflejo de Meta Ads",
+                "source": "Ajuste local (Bolivia)"
+            }
+        else:
+            # Para otros países seguimos usando Mercado Libre
+            results["demand"] = get_mercadolibre_demand(keyword, country)
+    else:
+        results["demand"] = {"score": 80, "label": "Producto digital", "source": "N/A"}
     
     weights = {"demand": 0.15, "meta_ads": 0.30, "social_interest": 0.20, "competition": 0.10, "margin": 0.15, "viral_potential": 0.10}
     overall = round(sum(results[k]["score"] * weights[k] for k in weights))
