@@ -1,405 +1,274 @@
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import requests
-import json
-import time
 import re
 from urllib.parse import quote
+import os
+from dotenv import load_dotenv
+import google.generativeai as genai
+
+# Cargar variables de entorno
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-# ─── Google Trends (via unofficial RSS) ──────────────────────────────────────
-def get_trend_score(keyword, country_code="BO"):
-    """
-    Uses Google Trends RSS feed (no API key needed).
-    Returns a score 0-100 based on whether keyword appears in trending topics,
-    and fetches interest data via the CSV endpoint.
-    """
+# ==============================================================================
+# 🔑 LLAVES DE APIs
+# ==============================================================================
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "") 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+# NUEVA LLAVE: API de Scraping (Ej: RapidAPI)
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY", "")
+
+# Configurar el modelo de IA 
+ai_model = None
+if GEMINI_API_KEY:
     try:
-        # Map country codes to Google Trends geo codes
-        geo_map = {
-            "BO": "BO", "MX": "MX", "AR": "AR", "CO": "CO",
-            "PE": "PE", "CL": "CL", "EC": "EC", "PY": "PY",
-            "UY": "UY", "ES": "ES", "US": "US", "LATAM": ""
+        genai.configure(api_key=GEMINI_API_KEY)
+        ai_model = genai.GenerativeModel('gemini-2.5-flash')
+    except AttributeError as e:
+        print(f"⚠️ ERROR DE VERSIÓN: {e}")
+        print("=> Ejecuta en tu terminal: pip install --upgrade google-generativeai")
+        ai_model = None
+
+# ─── 1. EXTRACCIÓN CRUDA DE YOUTUBE CON ESTADÍSTICAS ──────────────────────────
+def get_raw_youtube_comments(keyword, api_key=""):
+    """Extrae comentarios reales ordenando por videos más populares (viewCount)."""
+    if not api_key:
+        return {"comments": [], "videos_count": 0, "comments_count": 0}
+    
+    try:
+        # Forzamos a buscar los 5 videos más VISTOS (order=viewCount)
+        search_url = f"https://www.googleapis.com/youtube/v3/search?part=snippet&q={quote(keyword + ' curso OR negocio OR aprender')}&type=video&order=viewCount&maxResults=5&key={api_key}"
+        search_resp = requests.get(search_url, timeout=8).json()
+        
+        if "items" not in search_resp:
+            return {"comments": [], "videos_count": 0, "comments_count": 0}
+            
+        video_ids = [item["id"]["videoId"] for item in search_resp["items"]]
+        all_comments = []
+        
+        for vid in video_ids:
+            # Aumentamos a 25 comentarios extraídos por cada video popular
+            comment_url = f"https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId={vid}&maxResults=25&key={api_key}"
+            comment_resp = requests.get(comment_url, timeout=8).json()
+            
+            for item in comment_resp.get("items", []):
+                text = item["snippet"]["topLevelComment"]["snippet"]["textOriginal"]
+                all_comments.append(text)
+                
+        return {
+            "comments": all_comments,
+            "videos_count": len(video_ids),
+            "comments_count": len(all_comments)
         }
-        geo = geo_map.get(country_code, "")
+    except Exception as e:
+        print(f"Error YouTube: {e}")
+        return {"comments": [], "videos_count": 0, "comments_count": 0}
 
-        # Google Trends explore URL for CSV data
-        kw_encoded = quote(keyword)
-        url = f"https://trends.google.com/trends/api/explore?hl=es&tz=240&req={{\"comparisonItem\":[{{\"keyword\":\"{keyword}\",\"geo\":\"{geo}\",\"time\":\"today 12-m\"}}],\"category\":0,\"property\":\"\"}}"
+# ─── 2. EL CEREBRO DE IA (MARKETER EXPERTO + META ESTIMADO) ───────────────────
+def get_ai_insights(keyword, country, product_type, raw_comments):
+    if not ai_model:
+        return {
+            "social_saturation_score": 50, "social_label": "Falta API Key",
+            "meta_ads_score": 50, "meta_ads_label": "Falta API Key Gemini",
+            "angles": ["⚠️ Configura tu API Key de Gemini en el archivo .env"]
+        }
 
+    # Ahora le pasamos hasta 80 comentarios al cerebro de Gemini para mayor precisión
+    comments_text = "\n- ".join(raw_comments[:80]) if raw_comments else "No hay comentarios."
+
+    prompt = f"""
+    Eres un 'Media Buyer' y copywriter experto en marketing de afiliados para LATAM.
+    Analizamos vender un producto '{product_type}' sobre: '{keyword}' en {country}.
+
+    Comentarios de YouTube:
+    {comments_text}
+
+    Responde en JSON válido con esta estructura exacta:
+    {{
+        "social_saturation_score": [0 a 100. 100=Nicho virgen/Buena oportunidad, 10=Saturado],
+        "social_label": "[Etiqueta corta. Ej: 'Interés validado en YouTube']",
+        "meta_ads_score": [0 a 100. Estima la competencia publicitaria. 100=Pocos anunciantes/Océano azul, 10=Saturado],
+        "meta_ads_label": "[Etiqueta corta. Ej: 'Estimado IA: Baja competencia']",
+        "angles": [
+            "💡 [Dolor/Deseo 1 extraído de los comentarios. Hook para anuncio]",
+            "💡 [Dolor/Deseo 2...]",
+            "💡 [Dolor/Deseo 3...]"
+        ]
+    }}
+
+    Reglas:
+    - Extrae solo 3 ángulos profundos (miedos, frustraciones, deseos).
+    - IGNORA spam, links rotos o saludos.
+    """
+
+    try:
+        response = ai_model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+        import json
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"Error en IA: {e}")
+        return {
+            "social_saturation_score": 50, "social_label": "Error de IA",
+            "meta_ads_score": 50, "meta_ads_label": "Error de IA",
+            "angles": ["No se pudieron generar los ángulos."]
+        }
+
+# ─── 3. SCRAPER REAL DE META ADS (VÍA RAPIDAPI) ───────────────────────────────
+def get_real_meta_ads_scraper(keyword, api_key):
+    """
+    Intenta extraer datos reales de Meta usando una API de scraping de terceros.
+    Devuelve None si falla o no hay llave, para que la IA tome el control.
+    """
+    if not api_key:
+        return None
+        
+    try:
+        # Endpoint genérico. Reemplaza URL y Host según la API que contrates/uses en RapidAPI
+        url = "https://facebook-ads-scraper.p.rapidapi.com/search"
+        querystring = {"keyword": keyword, "limit": "50"}
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "X-RapidAPI-Key": api_key,
+            "X-RapidAPI-Host": "facebook-ads-scraper.p.rapidapi.com"
         }
-
-        # Try the dailytrends RSS which is public
-        rss_url = f"https://trends.google.com/trends/trendingsearches/daily/rss?geo={geo if geo else 'US'}"
-        resp = requests.get(rss_url, headers=headers, timeout=8)
-
+        resp = requests.get(url, headers=headers, params=querystring, timeout=12)
+        
         if resp.status_code == 200:
-            # Check if keyword appears in trending searches
-            content = resp.text.lower()
-            kw_lower = keyword.lower()
-            words = kw_lower.split()
-
-            matches = sum(1 for w in words if w in content)
-            match_ratio = matches / len(words) if words else 0
-
-            if match_ratio > 0.5:
-                return {"score": 80, "label": "Tendencia alta", "source": "Google Trends RSS"}
-            else:
-                return {"score": 45, "label": "Tendencia moderada", "source": "Google Trends RSS"}
-        else:
-            return {"score": 50, "label": "Sin datos disponibles", "source": "estimado"}
-
+            ads = resp.json()
+            ad_count = len(ads.get("data", []))
+            
+            if ad_count >= 15: score, label = 40, "Scraper: Muchos Ads Activos (Saturado)"
+            elif ad_count >= 5: score, label = 70, "Scraper: Demanda Validada (Oportunidad)"
+            else: score, label = 85, "Scraper: Pocos anunciantes"
+            
+            return {"score": score, "label": label, "source": "RapidAPI Scraper Real", "ad_count": ad_count}
+        return None
     except Exception as e:
-        return {"score": 50, "label": "Sin datos", "source": f"error: {str(e)[:50]}"}
+        print(f"Error Scraper Meta: {e}")
+        return None
 
-
-# ─── Wikipedia Pageviews (free, official API) ─────────────────────────────────
-def get_wikipedia_interest(keyword):
-    """
-    Wikipedia Pageview API is completely free and official.
-    High pageviews = high demand/interest in the topic.
-    """
+# ─── 4. MERCADO LIBRE ─────────────────────────────────────────────────────────
+def get_mercadolibre_demand(keyword, country_code="BO"):
+    ml_sites = {"BO": "MBO", "MX": "MLM", "AR": "MLA", "CO": "MCO", "CL": "MLC", "PE": "MPE"}
+    site = ml_sites.get(country_code, "MBO")
     try:
-        # Search for the article first
-        search_url = f"https://en.wikipedia.org/w/api.php?action=opensearch&search={quote(keyword)}&limit=1&format=json"
-        search_resp = requests.get(search_url, timeout=6)
+        url = f"https://api.mercadolibre.com/sites/{site}/search?q={quote(keyword)}&limit=1"
+        resp = requests.get(url, timeout=8)
+        if resp.status_code == 200:
+            total = resp.json().get("paging", {}).get("total", 0)
+            if total > 5000: score, label = 30, "Mercado saturado"
+            elif total > 500: score, label = 50, "Competencia alta"
+            elif total > 50: score, label = 85, "Demanda validada"
+            elif total > 5: score, label = 60, "Poca oferta"
+            else: score, label = 40, "Nulo interés comercial"
+            return {"score": score, "label": label, "source": f"Mercado Libre"}
+        return {"score": 40, "label": "Error de conexión ML"}
+    except Exception:
+        return {"score": 40, "label": "Sin datos", "source": "Error"}
 
-        if search_resp.status_code != 200:
-            return {"views": 0, "score": 40, "label": "Sin datos Wikipedia"}
-
-        search_data = search_resp.json()
-        if not search_data[1]:
-            # Try Spanish Wikipedia
-            search_url_es = f"https://es.wikipedia.org/w/api.php?action=opensearch&search={quote(keyword)}&limit=1&format=json"
-            search_resp_es = requests.get(search_url_es, timeout=6)
-            search_data = search_resp_es.json()
-            if not search_data[1]:
-                return {"views": 0, "score": 35, "label": "Término no encontrado"}
-            article = search_data[1][0].replace(" ", "_")
-            wiki_lang = "es"
-        else:
-            article = search_data[1][0].replace(" ", "_")
-            wiki_lang = "en"
-
-        # Get pageviews for last 60 days
-        end_date = time.strftime("%Y%m%d")
-        start_date = time.strftime("%Y%m%d", time.localtime(time.time() - 60*86400))
-
-        views_url = f"https://wikimedia.org/api/rest_v1/metrics/pageviews/per-article/{wiki_lang}.wikipedia/all-access/user/{quote(article)}/daily/{start_date}/{end_date}"
-        views_resp = requests.get(views_url, timeout=6)
-
-        if views_resp.status_code == 200:
-            items = views_resp.json().get("items", [])
-            if items:
-                total_views = sum(i.get("views", 0) for i in items)
-                avg_daily = total_views / len(items)
-
-                # Score based on daily average views
-                if avg_daily > 10000:
-                    score = 90
-                    label = "Demanda muy alta"
-                elif avg_daily > 3000:
-                    score = 75
-                    label = "Demanda alta"
-                elif avg_daily > 500:
-                    score = 60
-                    label = "Demanda moderada"
-                elif avg_daily > 100:
-                    score = 45
-                    label = "Demanda baja"
-                else:
-                    score = 30
-                    label = "Demanda muy baja"
-
-                return {
-                    "views": int(avg_daily),
-                    "score": score,
-                    "label": label,
-                    "article": article,
-                    "source": f"Wikipedia ({wiki_lang})"
-                }
-
-        return {"views": 0, "score": 40, "label": "Sin datos de vistas"}
-
-    except Exception as e:
-        return {"views": 0, "score": 40, "label": "Sin datos", "source": str(e)[:50]}
-
-
-# ─── DataForSEO Free / Google Autocomplete ────────────────────────────────────
+# ─── 5. GOOGLE AUTOCOMPLETE ───────────────────────────────────────────────────
 def get_competition_score(keyword, country_code="BO"):
-    """
-    Uses Google Autocomplete API (free, no key needed) to gauge
-    how many related searches exist = proxy for competition.
-    More autocomplete suggestions = more competition.
-    """
     try:
-        lang_map = {
-            "BO": "es", "MX": "es", "AR": "es", "CO": "es",
-            "PE": "es", "CL": "es", "EC": "es", "PY": "es",
-            "UY": "es", "ES": "es", "US": "en", "LATAM": "es"
-        }
-        lang = lang_map.get(country_code, "es")
         gl = country_code.lower() if country_code != "LATAM" else "us"
+        url = f"https://suggestqueries.google.com/complete/search?client=firefox&q={quote(keyword)}&hl=es&gl={gl}"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6).json()
+        suggestions = resp[1]
+        commercial_terms = ["comprar", "precio", "opiniones", "curso", "descargar", "barato", "estafa", "pdf", "mercado libre"]
+        commercial_count = sum(1 for s in suggestions if any(t in s.lower() for t in commercial_terms))
+        
+        if commercial_count >= 4: score, label = 30, "Competencia SEO extrema"
+        elif commercial_count >= 2: score, label = 60, "Competencia moderada"
+        else: score, label = 85, "Baja competencia en búsquedas"
+        return {"score": score, "label": label, "source": "Google Autocomplete"}
+    except Exception:
+        return {"score": 55, "label": "Sin datos", "source": "Error"}
 
-        url = f"https://suggestqueries.google.com/complete/search?client=firefox&q={quote(keyword + ' afiliado')}&hl={lang}&gl={gl}"
-        headers = {"User-Agent": "Mozilla/5.0"}
-
-        resp = requests.get(url, headers=headers, timeout=6)
-
-        if resp.status_code == 200:
-            data = resp.json()
-            suggestions = data[1] if len(data) > 1 else []
-            count = len(suggestions)
-
-            # More affiliate-specific suggestions = more competition
-            affiliate_terms = ["afiliado", "ganar", "comision", "programa", "review", "opiniones", "comprar"]
-            affiliate_count = sum(1 for s in suggestions
-                                  if any(t in s.lower() for t in affiliate_terms))
-
-            if affiliate_count >= 4:
-                score = 25  # Very saturated
-                label = "Competencia muy alta"
-            elif affiliate_count >= 2:
-                score = 45
-                label = "Competencia alta"
-            elif count >= 6:
-                score = 60
-                label = "Competencia moderada"
-            else:
-                score = 80
-                label = "Poca competencia"
-
-            return {
-                "suggestions": suggestions[:5],
-                "score": score,
-                "label": label,
-                "source": "Google Autocomplete"
-            }
-
-        return {"score": 55, "label": "Sin datos", "suggestions": []}
-
-    except Exception as e:
-        return {"score": 55, "label": "Sin datos", "source": str(e)[:50]}
-
-
-# ─── ClickBank Marketplace (scraping público) ─────────────────────────────────
-def get_affiliate_market_score(keyword, product_type):
-    """
-    Estimates affiliate saturation based on keyword + type.
-    Uses Open Library / public data as proxy.
-    """
-    try:
-        # Use Google Shopping suggestions as proxy for physical product saturation
-        url = f"https://suggestqueries.google.com/complete/search?client=firefox&q={quote(keyword + ' buy online')}&hl=en"
-        headers = {"User-Agent": "Mozilla/5.0"}
-        resp = requests.get(url, headers=headers, timeout=6)
-
-        suggestions = []
-        if resp.status_code == 200:
-            data = resp.json()
-            suggestions = data[1] if len(data) > 1 else []
-
-        # Physical products tend to have more competition
-        base_score = 65 if product_type == "physical" else 55
-
-        buy_terms = ["buy", "price", "cheap", "best", "review", "where to", "amazon"]
-        saturation = sum(1 for s in suggestions if any(t in s.lower() for t in buy_terms))
-
-        if saturation >= 4:
-            score = base_score - 25
-            label = "Muy saturado de afiliados"
-        elif saturation >= 2:
-            score = base_score - 10
-            label = "Saturación media"
-        else:
-            score = base_score + 10
-            label = "Poca saturación"
-
-        return {"score": max(20, min(95, score)), "label": label, "source": "Análisis de mercado"}
-
-    except Exception as e:
-        return {"score": 55, "label": "Sin datos", "source": str(e)[:50]}
-
-
-# ─── Margin estimator based on product type & price ──────────────────────────
-def estimate_margin(product_type, price_range, commission_input):
-    """
-    Estimates commission margin based on product type and price range.
-    Digital products typically have 30-70% margins.
-    Physical products typically have 5-20% margins.
-    """
-    # Try to parse user-provided commission first
-    if commission_input and commission_input.lower() not in ["no lo sé", "no sé", "no se", "n/a", ""]:
+# ─── 6. ESTIMADOR DE MARGEN Y VIRALIDAD ───────────────────────────────────────
+def estimate_margin(product_type, commission_input):
+    if commission_input:
         match = re.search(r'(\d+)', commission_input)
         if match:
             pct = int(match.group(1))
-            if pct > 100:  # It's a dollar amount
-                if "$1,000" in price_range or "Más de" in price_range:
-                    score = 85
-                elif "$300" in price_range:
-                    score = 70
-                else:
-                    score = 55
-            else:
-                score = min(95, int(pct * 1.3))
-            return {
-                "score": score,
-                "label": f"{pct}% comisión",
-                "estimated_commission": commission_input,
-                "source": "Dato proporcionado"
-            }
+            score = 70 if pct > 100 else min(95, int(pct * 1.3))
+            return {"score": score, "label": f"Comisión del {pct}%", "source": "Dato usuario"}
+    margins = {"digital": 70, "physical": 35, "service": 60, "hybrid": 50}
+    return {"score": margins.get(product_type, 50), "label": "Estimado por industria", "source": "Interno"}
 
-    # Estimate based on type
-    margins = {
-        "digital":  {"base": 70, "label": "40-70% típico en digitales"},
-        "physical": {"base": 35, "label": "5-20% típico en físicos"},
-        "service":  {"base": 60, "label": "20-40% típico en SaaS"},
-        "hybrid":   {"base": 50, "label": "Variable según componente"},
-    }
+def estimate_viral_potential(product_type, platforms):
+    base = 75 if product_type == "physical" else 60
+    boost = sum({"TikTok": 20, "Instagram/Reels": 15, "YouTube": 10}.get(p, 0) for p in platforms[:3])
+    final = min(95, base + boost)
+    return {"score": final, "label": "Alto potencial" if final >= 70 else "Moderado", "source": "Plataformas"}
 
-    price_bonus = {
-        "Menos de $30": -10,
-        "$30 - $100": 0,
-        "$100 - $300": 10,
-        "$300 - $1,000": 20,
-        "Más de $1,000": 25,
-        "Suscripción recurrente": 30,
-    }
-
-    base = margins.get(product_type, {"base": 50})["base"]
-    bonus = price_bonus.get(price_range, 0)
-    label = margins.get(product_type, {"label": "Variable"})["label"]
-
-    return {
-        "score": min(95, base + bonus),
-        "label": label,
-        "source": "Estimado por tipo de producto"
-    }
-
-
-# ─── Viral potential estimator ────────────────────────────────────────────────
-def estimate_viral_potential(keyword, platforms, product_type):
-    """
-    Estimates viral potential based on product category and platforms.
-    Uses TikTok/Instagram friendly product types.
-    """
-    viral_categories = {
-        "physical": 75,   # Physical products are very visual = viral
-        "digital": 60,
-        "service": 45,
-        "hybrid": 65,
-    }
-
-    platform_boost = {
-        "TikTok": 20,
-        "Instagram/Reels": 15,
-        "YouTube": 10,
-        "Pinterest": 8,
-        "Blog/SEO": -5,
-    }
-
-    base = viral_categories.get(product_type, 50)
-    boost = sum(platform_boost.get(p, 0) for p in platforms[:3])
-
-    # Keywords that indicate viral potential
-    viral_keywords = ["transformación", "resultado", "antes y después", "secreto",
-                      "increíble", "natural", "rápido", "fácil", "bajar", "ganar",
-                      "supplement", "beauty", "fitness", "gadget", "hack"]
-    kw_boost = sum(5 for vk in viral_keywords if vk in keyword.lower())
-
-    final = min(95, base + boost + kw_boost)
-    label = "Alto potencial viral" if final >= 70 else "Potencial viral moderado" if final >= 45 else "Bajo potencial viral"
-
-    return {"score": final, "label": label, "source": "Análisis por tipo y plataforma"}
-
-
-# ─── Main analysis endpoint ───────────────────────────────────────────────────
+# ─── ENDPOINT PRINCIPAL ───────────────────────────────────────────────────────
 @app.route("/api/analyze", methods=["POST"])
 def analyze():
     data = request.get_json()
-
-    keyword      = data.get("product", "")
+    keyword = data.get("product", "")
     product_type = data.get("productType", "digital")
-    country      = data.get("country", "BO")
-    price_range  = data.get("price", "")
-    commission   = data.get("commission", "")
-    platforms    = data.get("platforms", [])
-    category     = data.get("category", "")
-    target       = data.get("target", "")
-
+    country = data.get("country", "BO")
+    commission = data.get("commission", "")
+    platforms = data.get("platforms", [])
+    
     results = {}
-
-    # 1. Trend score (Google Trends RSS)
-    results["trend"] = get_trend_score(keyword, country)
-    time.sleep(0.3)
-
-    # 2. Demand score (Wikipedia Pageviews)
-    results["demand"] = get_wikipedia_interest(keyword)
-    time.sleep(0.3)
-
-    # 3. Competition score (Google Autocomplete)
-    results["competition"] = get_competition_score(keyword, country)
-    time.sleep(0.3)
-
-    # 4. Affiliate saturation
-    results["affiliate_saturation"] = get_affiliate_market_score(keyword, product_type)
-
-    # 5. Margin estimate
-    results["margin"] = estimate_margin(product_type, price_range, commission)
-
-    # 6. Viral potential
-    results["viral_potential"] = estimate_viral_potential(keyword, platforms, product_type)
-
-    # ── Calculate overall score ──
-    weights = {
-        "demand": 0.25,
-        "trend": 0.20,
-        "margin": 0.25,
-        "competition": 0.15,
-        "affiliate_saturation": 0.10,
-        "viral_potential": 0.05,
-    }
-
-    overall = sum(results[k]["score"] * w for k, w in weights.items())
-    overall = round(overall)
-
-    # ── Verdict ──
-    if overall >= 70:
-        verdict = "ALTA OPORTUNIDAD"
-    elif overall >= 45:
-        verdict = "VIABLE"
+    
+    if product_type in ["physical", "hybrid"]:
+        results["demand"] = get_mercadolibre_demand(keyword, country)
     else:
-        verdict = "EVITAR"
-
-    # ── Country context ──
-    country_context = {
-        "BO": "Bolivia tiene un mercado digital en crecimiento con alta penetración de WhatsApp y Facebook. TikTok está ganando fuerte tracción. Los pagos vía QR (Tigo Money, BNB) facilitan ventas digitales.",
-        "MX": "México es el mayor mercado de ecommerce de habla hispana. Alta competencia pero enorme volumen. Mercado Libre y redes sociales dominan.",
-        "AR": "Argentina tiene alta actividad digital y audiencias muy educadas. La volatilidad económica puede afectar conversiones en productos caros.",
-        "CO": "Colombia tiene crecimiento acelerado en ecommerce y buena adopción de pagos digitales. Audiencia joven y receptiva a productos digitales.",
-        "CL": "Chile tiene el mayor poder adquisitivo de LATAM y alta digitalización. Mercado maduro, dispuesto a pagar por calidad.",
-        "PE": "Perú está en pleno despegue digital. Oportunidad en nichos con poca competencia local.",
-        "LATAM": "Estrategia regional con mayor alcance. Adaptar mensajes a cada país aumenta conversión.",
+        results["demand"] = {"score": 80, "label": "Producto digital", "source": "N/A"}
+        
+    results["competition"] = get_competition_score(keyword, country)
+    results["margin"] = estimate_margin(product_type, commission)
+    results["viral_potential"] = estimate_viral_potential(product_type, platforms)
+    
+    # Análisis de YouTube con IA
+    yt_data = get_raw_youtube_comments(keyword, YOUTUBE_API_KEY)
+    ai_data = get_ai_insights(keyword, country, product_type, yt_data["comments"])
+    
+    results["social_interest"] = {
+        "score": ai_data.get("social_saturation_score", 50),
+        "label": ai_data.get("social_label", "Análisis IA"),
+        "source": "Gemini AI"
     }
-
+    
+    # LÓGICA DE FALLBACK Y CONTEO DE ANUNCIOS: Scraper Real vs IA
+    meta_ads_count = "Estimado por IA"
+    real_meta_ads = get_real_meta_ads_scraper(keyword, RAPIDAPI_KEY)
+    
+    if real_meta_ads:
+        # Extraemos el count que ahora envía la función para mandarlo al frontend
+        meta_ads_count = real_meta_ads.get("ad_count", 0)
+        results["meta_ads"] = real_meta_ads
+    else:
+        results["meta_ads"] = {
+            "score": ai_data.get("meta_ads_score", 50),
+            "label": ai_data.get("meta_ads_label", "Estimado por IA"),
+            "source": "Gemini AI (Falta Scraper Key)"
+        }
+    
+    weights = {"demand": 0.15, "meta_ads": 0.30, "social_interest": 0.20, "competition": 0.10, "margin": 0.15, "viral_potential": 0.10}
+    overall = round(sum(results[k]["score"] * weights[k] for k in weights))
+    verdict = "ALTA OPORTUNIDAD" if overall >= 70 else "VIABLE" if overall >= 45 else "EVITAR"
+    
     return jsonify({
         "overall_score": overall,
         "verdict": verdict,
         "dimensions": results,
-        "country_context": country_context.get(country, "Mercado con potencial de crecimiento digital."),
+        "angles": ai_data.get("angles", []),
+        "stats": {
+            "videos": yt_data["videos_count"],
+            "comments": yt_data["comments_count"],
+            "meta_ads": meta_ads_count
+        },
         "keyword": keyword,
-        "country": country,
+        "country": country
     })
-
 
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
